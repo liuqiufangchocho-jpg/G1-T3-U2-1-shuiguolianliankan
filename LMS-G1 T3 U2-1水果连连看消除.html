@@ -1,0 +1,601 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>G1 T3 U2 水果连连消</title>
+    <link href="https://fonts.cdnfonts.com/css/digital-7-mono" rel="stylesheet">
+    <style>
+        :root {
+            --forest-green: #7BAE7F;
+            --soft-grass: #C1D5A4;
+            --wood-brown: #8D6E63;
+            --warm-cream: #FDF5E6;
+            --sun-yellow: #F9E79F;
+            --bright-red: #FF0000;
+            --guide-purple: #BF40BF;
+        }
+
+        /* 全局锁定，防止任何形式的滚动 */
+        html, body {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            position: fixed;
+            background-color: var(--soft-grass);
+            -webkit-user-select: none;
+            user-select: none;
+        }
+
+        * {
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+            touch-action: none;
+        }
+
+        body {
+            font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            color: var(--wood-brown);
+        }
+
+        /* 核心响应式容器 */
+        #screen-container {
+            display: flex;
+            flex-direction: row; /* 默认电脑/平板布局 */
+            align-items: center;
+            justify-content: center;
+            width: 100vw;
+            height: 100vh;
+            padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+            gap: 20px;
+        }
+
+        /* 移动端适配：改为垂直布局 */
+        @media (max-width: 768px) {
+            #screen-container {
+                flex-direction: column;
+                gap: 10px;
+            }
+            #external-title {
+                writing-mode: horizontal-tb !important;
+                letter-spacing: 4px !important;
+                font-size: 24px !important;
+                margin-top: 5px;
+            }
+            #external-stats {
+                flex-direction: row !important;
+                width: 90% !important;
+                height: auto !important;
+                justify-content: center;
+                gap: 10px !important;
+            }
+            .stat-card {
+                flex: 1;
+                padding: 5px !important;
+            }
+            #score-box { font-size: 32px !important; }
+            #timer-box { font-size: 28px !important; }
+        }
+
+        /* 1. 标题样式 */
+        #external-title {
+            writing-mode: vertical-rl;
+            text-orientation: mixed;
+            font-size: clamp(20px, 4vw, 36px);
+            font-weight: 900;
+            color: var(--wood-brown);
+            letter-spacing: 8px;
+            text-shadow: 2px 2px 0px white;
+            flex-shrink: 0;
+        }
+
+        /* 2. 主游戏区域框 - 动态比例计算 */
+        #game-wrapper {
+            width: 85vmin; /* 取屏幕短边比例 */
+            height: calc(85vmin * 1.2); /* 保持 5:6 左右的比例 */
+            max-width: 600px;
+            max-height: 80vh;
+            background: var(--warm-cream);
+            border: clamp(4px, 1vw, 8px) solid white;
+            border-radius: 30px;
+            padding: 10px;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+        }
+
+        #game-area {
+            flex: 1;
+            position: relative;
+            background: rgba(255,255,255,0.4);
+            border-radius: 20px;
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            grid-template-rows: repeat(6, 1fr);
+            grid-gap: 8px;
+            padding: 8px;
+            z-index: 10;
+        }
+
+        /* 3. 状态栏 */
+        #external-stats {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            width: 140px; 
+            flex-shrink: 0;
+        }
+
+        .stat-card {
+            background: white;
+            padding: 12px 8px;
+            border-radius: 18px;
+            text-align: center;
+            box-shadow: 0 4px 0px var(--forest-green);
+            border: 2px solid var(--forest-green);
+        }
+
+        .stat-label {
+            display: block;
+            font-size: 14px;
+            font-weight: bold;
+            margin-bottom: 3px;
+            color: var(--forest-green);
+        }
+
+        #timer-box {
+            font-family: 'Digital-7 Mono', monospace;
+            font-size: 32px;
+            color: var(--bright-red);
+            background: #1a1a1a;
+            padding: 5px;
+            border-radius: 8px;
+            width: 100%;
+            display: inline-block;
+        }
+
+        #score-box {
+            font-size: 36px;
+            font-weight: 900;
+            color: var(--wood-brown);
+        }
+
+        /* 棋子样式 */
+        .tile {
+            width: 100%;
+            height: 100%;
+            background: white;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: clamp(24px, 6vw, 50px);
+            cursor: pointer;
+            box-shadow: 0 4px 0px #e0e0e0;
+        }
+
+        .tile.selected {
+            background: var(--sun-yellow);
+            transform: scale(0.9);
+            box-shadow: none;
+            border: 3px solid var(--forest-green);
+        }
+
+        /* 覆盖层 */
+        #overlay {
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(253, 245, 230, 0.98);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 100;
+            border-radius: 22px;
+            padding: 20px;
+        }
+
+        #start-screen, #result-screen { text-align: center; }
+
+        #start-btn, #restart-btn {
+            background: none;
+            border: none;
+            cursor: pointer;
+            font-size: clamp(80px, 20vw, 120px);
+        }
+
+        .instruction-text {
+            display: block;
+            font-size: clamp(16px, 4vw, 22px); 
+            color: var(--wood-brown);
+            max-width: 80%;
+            margin: 0 auto;
+            line-height: 1.4;
+            font-weight: 600;
+        }
+
+        #line-canvas {
+            position: absolute;
+            top: 0; left: 0;
+            pointer-events: none;
+            z-index: 50;
+        }
+
+        #fireworks-canvas {
+            position: fixed;
+            top: 0; left: 0;
+            width: 100vw; height: 100vh;
+            pointer-events: none;
+            z-index: 999; 
+            display: none;
+        }
+
+        @keyframes bounce { from { transform: translateY(0); } to { transform: translateY(-15px); } }
+        #timer-box.warning { animation: flash 0.5s infinite; }
+        @keyframes flash { 50% { background: #600; } }
+    </style>
+</head>
+<body>
+
+<div id="screen-container">
+    <div id="external-title">G1 T3 U2 水果</div>
+
+    <div id="game-wrapper">
+        <div id="game-area"></div>
+        <canvas id="line-canvas"></canvas>
+
+        <div id="overlay">
+            <div id="start-screen">
+                <button id="start-btn">👉</button>
+                <span class="instruction-text">Please connect as many identical images as possible within 1 minute.</span>
+            </div>
+            
+            <div id="result-screen" style="display:none;">
+                <span style="font-size: clamp(100px, 25vw, 180px); display:block; animation: bounce 1s infinite alternate;">🏆</span>
+                <span id="final-score" style="font-size: 80px; font-weight: 900; display:block;">0</span>
+                <button id="restart-btn" onclick="location.reload()">🔄</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="external-stats">
+        <div class="stat-card">
+            <span class="stat-label">TIME</span>
+            <div id="timer-box">00:60</div>
+        </div>
+        <div class="stat-card">
+            <span class="stat-label">SCORE</span>
+            <div id="score-box">0</div>
+        </div>
+    </div>
+</div>
+
+<canvas id="fireworks-canvas"></canvas>
+
+<script>
+    const items = [
+        { emoji: '🍏', name: '苹果' },
+        { emoji: '🍓', name: '草莓' },
+        { emoji: '🍌', name: '香蕉' },
+        { emoji: '🍉', name: '西瓜' }
+    ];
+
+    const ROWS = 6;
+    const COLS = 5;
+    let score = 0;
+    let timeLeft = 60;
+    let isPlaying = false;
+    let gridData = [];
+    let selectedChain = [];
+    let isDragging = false;
+    let timerInterval = null;
+
+    let guideChain = [];
+    let showGuide = false;
+
+    const gameArea = document.getElementById('game-area');
+    const lineCanvas = document.getElementById('line-canvas');
+    const ctx = lineCanvas.getContext('2d');
+    const fwCanvas = document.getElementById('fireworks-canvas');
+    const fwCtx = fwCanvas.getContext('2d');
+    const scoreBox = document.getElementById('score-box');
+    const timerBox = document.getElementById('timer-box');
+
+    function speak(text) {
+        if ('speechSynthesis' in window) {
+            speechSynthesis.cancel();
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.lang = 'zh-CN';
+            speechSynthesis.speak(utterance);
+        }
+    }
+
+    function initGrid() {
+        do {
+            gridData = [];
+            for (let r = 0; r < ROWS; r++) {
+                gridData[r] = [];
+                for (let c = 0; c < COLS; c++) {
+                    gridData[r][c] = Math.floor(Math.random() * items.length);
+                }
+            }
+        } while (!hasMatches());
+        renderGrid();
+    }
+
+    function findGuideMatch() {
+        let bestChain = [];
+        for (let r = 0; r < ROWS; r++) {
+            for (let c = 0; c < COLS; c++) {
+                const result = getLongestPathFrom(r, c, gridData[r][c], [{r, c}]);
+                if (result.length >= 4 && result.length > bestChain.length) {
+                    bestChain = [...result];
+                }
+                if (bestChain.length >= 7) break;
+            }
+            if (bestChain.length >= 7) break;
+        }
+        return bestChain.length >= 4 ? bestChain : null;
+    }
+
+    function getLongestPathFrom(r, c, type, visited) {
+        const dirs = [[0,1],[1,0],[1,1],[1,-1],[-1,0],[0,-1],[-1,-1],[-1,1]];
+        let maxPath = [...visited];
+
+        for (let [dr, dc] of dirs) {
+            const nr = r + dr, nc = c + dc;
+            if (nr >= 0 && nr < ROWS && nc >= 0 && nc < COLS && 
+                gridData[nr][nc] === type && 
+                !visited.some(p => p.r === nr && p.c === nc)) {
+                
+                const newPath = getLongestPathFrom(nr, nc, type, [...visited, {r: nr, c: nc}]);
+                if (newPath.length > maxPath.length) maxPath = newPath;
+                if (maxPath.length >= 7) break;
+            }
+        }
+        return maxPath;
+    }
+
+    function hasMatches() {
+        for (let r = 0; r < ROWS; r++) {
+            for (let c = 0; c < COLS; c++) {
+                const type = gridData[r][c];
+                const dirs = [[0,1], [1,0], [1,1], [1,-1]];
+                for (let [dr, dc] of dirs) {
+                    const nr = r + dr, nc = c + dc;
+                    if (nr < ROWS && nc >= 0 && nc < COLS && gridData[nr][nc] === type) return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    function renderGrid() {
+        gameArea.innerHTML = '';
+        for (let r = 0; r < ROWS; r++) {
+            for (let c = 0; c < COLS; c++) {
+                const tile = document.createElement('div');
+                tile.className = 'tile';
+                tile.dataset.r = r;
+                tile.dataset.c = c;
+                tile.innerText = items[gridData[r][c]].emoji;
+                
+                tile.addEventListener('mousedown', (e) => { e.preventDefault(); handleInputStart(); startDrag(r, c); });
+                tile.addEventListener('mouseenter', () => continueDrag(r, c));
+                tile.addEventListener('touchstart', (e) => {
+                    e.preventDefault();
+                    handleInputStart();
+                    const t = e.touches[0];
+                    const target = document.elementFromPoint(t.clientX, t.clientY);
+                    if(target && target.dataset.r !== undefined) startDrag(parseInt(target.dataset.r), parseInt(target.dataset.c));
+                }, {passive: false});
+                tile.addEventListener('touchmove', (e) => {
+                    e.preventDefault();
+                    const t = e.touches[0];
+                    const target = document.elementFromPoint(t.clientX, t.clientY);
+                    if(target && target.dataset.r !== undefined) continueDrag(parseInt(target.dataset.r), parseInt(target.dataset.c));
+                }, {passive: false});
+
+                gameArea.appendChild(tile);
+            }
+        }
+        setTimeout(resizeCanvas, 50); // 确保渲染后获取宽高
+    }
+
+    function handleInputStart() {
+        if (showGuide) {
+            showGuide = false;
+            guideChain = [];
+            ctx.clearRect(0, 0, lineCanvas.width, lineCanvas.height);
+        }
+    }
+
+    function startDrag(r, c) {
+        if (!isPlaying) return;
+        isDragging = true;
+        selectedChain = [{r, c}];
+        speak(items[gridData[r][c]].name);
+        updateVisuals();
+    }
+
+    function continueDrag(r, c) {
+        if (!isDragging) return;
+        const last = selectedChain[selectedChain.length - 1];
+        if (selectedChain.length > 1) {
+            const secondLast = selectedChain[selectedChain.length - 2];
+            if (secondLast.r === r && secondLast.c === c) {
+                selectedChain.pop();
+                updateVisuals();
+                return;
+            }
+        }
+        if (gridData[r][c] === gridData[last.r][last.c] && 
+            Math.abs(last.r - r) <= 1 && Math.abs(last.c - c) <= 1 && 
+            !selectedChain.some(p => p.r === r && p.c === c)) {
+            selectedChain.push({r, c});
+            updateVisuals();
+        }
+    }
+
+    function endDrag() {
+        if (!isDragging) return;
+        isDragging = false;
+        if (selectedChain.length >= 2) {
+            eliminate();
+        } else {
+            selectedChain = [];
+            updateVisuals();
+        }
+    }
+
+    function eliminate() {
+        score += selectedChain.length * 10;
+        scoreBox.innerText = score;
+        selectedChain.forEach(p => gridData[p.r][p.c] = null);
+
+        for (let c = 0; c < COLS; c++) {
+            let empty = 0;
+            for (let r = ROWS - 1; r >= 0; r--) {
+                if (gridData[r][c] === null) empty++;
+                else if (empty > 0) {
+                    gridData[r + empty][c] = gridData[r][c];
+                    gridData[r][c] = null;
+                }
+            }
+            for (let r = 0; r < empty; r++) gridData[r][c] = Math.floor(Math.random() * items.length);
+        }
+        selectedChain = [];
+        renderGrid();
+        if (!hasMatches()) setTimeout(initGrid, 500);
+    }
+
+    function updateVisuals() {
+        const tiles = document.querySelectorAll('.tile');
+        tiles.forEach(t => t.classList.remove('selected'));
+        selectedChain.forEach(p => {
+            const idx = p.r * COLS + p.c;
+            if(tiles[idx]) tiles[idx].classList.add('selected');
+        });
+        drawLines();
+    }
+
+    function drawLines() {
+        ctx.clearRect(0, 0, lineCanvas.width, lineCanvas.height);
+        const tiles = document.querySelectorAll('.tile');
+        const wrapperRect = gameArea.getBoundingClientRect();
+
+        const getCoord = (p) => {
+            const rect = tiles[p.r * COLS + p.c].getBoundingClientRect();
+            return {
+                x: rect.left - wrapperRect.left + rect.width / 2,
+                y: rect.top - wrapperRect.top + rect.height / 2
+            };
+        };
+
+        if (showGuide && guideChain.length >= 2) {
+            ctx.save();
+            ctx.beginPath();
+            ctx.strokeStyle = '#BF40BF';
+            ctx.lineWidth = 14;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            ctx.shadowBlur = 15;
+            ctx.shadowColor = '#FF00FF';
+            ctx.globalAlpha = 0.3 + Math.abs(Math.sin(Date.now() / 300)) * 0.6;
+            guideChain.forEach((p, i) => {
+                const pos = getCoord(p);
+                if (i === 0) ctx.moveTo(pos.x, pos.y); else ctx.lineTo(pos.x, pos.y);
+            });
+            ctx.stroke();
+            ctx.restore();
+            if (showGuide) requestAnimationFrame(drawLines);
+        }
+
+        if (selectedChain.length >= 2) {
+            ctx.beginPath();
+            ctx.strokeStyle = 'rgba(123, 174, 127, 0.9)';
+            ctx.lineWidth = 15;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            selectedChain.forEach((p, i) => {
+                const pos = getCoord(p);
+                if (i === 0) ctx.moveTo(pos.x, pos.y); else ctx.lineTo(pos.x, pos.y);
+            });
+            ctx.stroke();
+        }
+    }
+
+    function startTimer() {
+        timeLeft = 60;
+        timerInterval = setInterval(() => {
+            timeLeft--;
+            timerBox.innerText = `00:${timeLeft < 10 ? '0' + timeLeft : timeLeft}`;
+            if (timeLeft <= 10) timerBox.classList.add('warning');
+            if (timeLeft <= 0) endGame();
+        }, 1000);
+    }
+
+    function endGame() {
+        isPlaying = false;
+        clearInterval(timerInterval);
+        document.getElementById('overlay').style.display = 'flex';
+        document.getElementById('start-screen').style.display = 'none';
+        document.getElementById('result-screen').style.display = 'block';
+        document.getElementById('final-score').innerText = score;
+        fwCanvas.style.display = 'block';
+        fwCanvas.width = window.innerWidth;
+        fwCanvas.height = window.innerHeight;
+        updateFireworks();
+        speak("棒！棒！你真棒！");
+    }
+
+    let particles = [];
+    function updateFireworks() {
+        fwCtx.clearRect(0, 0, fwCanvas.width, fwCanvas.height);
+        if (Math.random() < 0.1) {
+            const x = Math.random() * fwCanvas.width;
+            const y = Math.random() * fwCanvas.height * 0.5;
+            const color = `hsl(${Math.random() * 360}, 100%, 50%)`;
+            for(let i=0; i<30; i++) particles.push({x, y, vx:(Math.random()-0.5)*10, vy:(Math.random()-0.5)*10, life:1, color});
+        }
+        particles = particles.filter(p => p.life > 0);
+        particles.forEach(p => {
+            p.x += p.vx; p.y += p.vy; p.vy += 0.15; p.life -= 0.02;
+            fwCtx.fillStyle = p.color; fwCtx.globalAlpha = p.life;
+            fwCtx.beginPath(); fwCtx.arc(p.x, p.y, 3, 0, 7); fwCtx.fill();
+        });
+        if (!isPlaying) requestAnimationFrame(updateFireworks);
+    }
+
+    function resizeCanvas() {
+        lineCanvas.width = gameArea.clientWidth;
+        lineCanvas.height = gameArea.clientHeight;
+        drawLines();
+    }
+
+    window.addEventListener('mouseup', endDrag);
+    window.addEventListener('touchend', endDrag);
+    window.addEventListener('resize', resizeCanvas);
+    
+    document.getElementById('start-btn').onclick = () => {
+        document.getElementById('overlay').style.display = 'none';
+        isPlaying = true;
+        score = 0;
+        scoreBox.innerText = "0";
+        initGrid();
+        guideChain = findGuideMatch();
+        if (guideChain) { showGuide = true; drawLines(); }
+        startTimer();
+    };
+
+    initGrid();
+</script>
+
+</body>
+</html>
